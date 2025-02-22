@@ -1,9 +1,13 @@
 # imports
 from dotenv import load_dotenv
 from llama_index.core import PromptTemplate, SimpleDirectoryReader, VectorStoreIndex
+from llama_index.core.agent import ReActAgent
 from llama_index.core.embeddings import resolve_embed_model
+from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.llms.ollama import Ollama
 from llama_parse import LlamaParse
+
+from prompts import context
 
 # Loading in the Llama cloud api key, Llamaparse will use it automatically when loaded in
 load_dotenv()
@@ -44,5 +48,33 @@ vector_index = VectorStoreIndex.from_documents(documents, embed_model=embed_mode
 # Now our vector index can be utilised for Questions and Answers via the query_engine object
 query_engine = vector_index.as_query_engine(llm=llm)
 
-result = query_engine.query("what are some of the routes in the API?")
-print(result)
+# Defining a list of tools we can provide to the AI Agent
+# When answering a query, the AI Agent will automatically pick the best option from these tools
+# First Tool is a QueryEngineTool object taking in our query_engine object and also some metadata
+# The metadata is a ToolMetaData object which takes in a name and a description of the tools purpose
+tools = [
+    QueryEngineTool(
+        query_engine=query_engine,
+        metadata=ToolMetadata(
+            name="api_documentation",
+            description="this gives documentation about code for an API. Use this for reading docs for the API",
+        ),
+    )
+]
+
+# Defining a new llm object which is more suited to code generation as oppposed to Q&A
+code_llm = Ollama(model="codellama")
+
+# Defining the agent which is a ReActAgent object calling the from_tools function
+# We pass our array of tools, new llm object, Verbose (Boolean) for if you want to see the agents thoughts and a context string.
+# The context string can be found in prompts.py and it describes the agents purpose
+agent = ReActAgent.from_tools(tools=tools, llm=code_llm, verbose=True, context=context)
+
+# While loop for taking in user prompts
+# Takes in a user input, Calls the agent.query() method passing the user input via the prompt variable
+# Assigns the return of the agent.query() call to the result variable
+# Prints out the result
+# q to quit the loop
+while (prompt := input("Enter a prompt (q to quit): ")) != "q":
+    result = agent.query(prompt)
+    print(result)
