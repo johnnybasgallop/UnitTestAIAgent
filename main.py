@@ -1,13 +1,20 @@
 # imports
+import ast
+import os
+
 from dotenv import load_dotenv
 from llama_index.core import PromptTemplate, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.core.agent import ReActAgent
 from llama_index.core.embeddings import resolve_embed_model
+from llama_index.core.output_parsers import PydanticOutputParser
+from llama_index.core.query_pipeline import QueryPipeline
 from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.llms.ollama import Ollama
 from llama_parse import LlamaParse
+from pydantic import BaseModel
 
-from prompts import context
+from code_reader import code_reader
+from prompts import code_parser_template, context
 
 # Loading in the Llama cloud api key, Llamaparse will use it automatically when loaded in
 load_dotenv()
@@ -52,6 +59,7 @@ query_engine = vector_index.as_query_engine(llm=llm)
 # When answering a query, the AI Agent will automatically pick the best option from these tools
 # First Tool is a QueryEngineTool object taking in our query_engine object and also some metadata
 # The metadata is a ToolMetaData object which takes in a name and a description of the tools purpose
+# Second tool is the code reader tool, as defined in code_reader.py
 tools = [
     QueryEngineTool(
         query_engine=query_engine,
@@ -59,7 +67,8 @@ tools = [
             name="api_documentation",
             description="this gives documentation about code for an API. Use this for reading docs for the API",
         ),
-    )
+    ),
+    code_reader,
 ]
 
 # Defining a new llm object which is more suited to code generation as oppposed to Q&A
@@ -70,11 +79,76 @@ code_llm = Ollama(model="codellama")
 # The context string can be found in prompts.py and it describes the agents purpose
 agent = ReActAgent.from_tools(tools=tools, llm=code_llm, verbose=True, context=context)
 
+
+# Define the pydantic object, using the Basemodel as the base class
+# Contains the code, description and relevant filename
+class CodeOutput(BaseModel):
+    code: str
+    description: str
+    filename: str
+
+
+# Defining the parser to be a PydanticOutputParser, accepting CodeOutput as the output class
+# Defines the format of the parser to be the CodeOutput class
+parser = PydanticOutputParser(CodeOutput)
+
+# Uses the parser (and by extention the CodeOutput class) to format the returned json_prompt_str
+# parser.format will find the JSON representation that conforms to CodeOutput and will format it appropriately
+# it will then inject it into the code_parser_template
+json_prompt_str = parser.format(code_parser_template)
+
+# Creating the prompt template using our previoulsly defined json_prompt_str
+json_prompt_tmpl = PromptTemplate(json_prompt_str)
+
+# Defining our query pipeline to determine the chain of events
+# Setting the chain to take our json template and pass it to our llm (not the code llm)
+output_pipeline = QueryPipeline(chain=[json_prompt_tmpl, llm])
+
 # While loop for taking in user prompts
 # Takes in a user input, Calls the agent.query() method passing the user input via the prompt variable
 # Assigns the return of the agent.query() call to the result variable
-# Prints out the result
+# Passed the result to our output pipeline and run it, saying our response (in the parser template) = to the result
+# The output pipeline should then pass that code_parser_template through to the llm and assigns the llms response to next_result
 # q to quit the loop
-while (prompt := input("Enter a prompt (q to quit): ")) != "q":
-    result = agent.query(prompt)
-    print(result)
+
+# prompt: read the contents of the test.py file and write a python script that calls the post endpoint in that file to make a new item
+while (
+    prompt := input(
+        "Enter a prompt, be as specific and verbose as possible for the best results (q to quit): "
+    )
+) != "q":
+    retries = 0
+    while retries < 3:
+        try:
+            result = agent.query(prompt)
+            next_result = output_pipeline.run(response=result)
+
+            cleaned_json = ast.literal_eval(
+                str(next_result)
+                .replace("assistant:", "")
+                .replace("python```", "")
+                .replace("```", "")
+            )
+            break
+
+        except Exception as e:
+            retries += 1
+            print(f"Error occured, retry #{retries}:", e)
+
+    if retries >= 3:
+        print("unable to process request, try again")
+        continue
+
+    print("Code cleaned:")
+    print(cleaned_json["code"])
+    print("\n\nDescription:", cleaned_json["description"])
+
+    filename = cleaned_json["filename"]
+
+    try:
+        with open(os.path.join("output", filename), "w") as f:
+            f.write(cleaned_json["code"])
+            print(f"wrote code to {filename}")
+
+    except Exception as e:
+        print(f"error writing to file: {filename}: ", e)
