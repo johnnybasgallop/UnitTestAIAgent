@@ -1,6 +1,9 @@
 # imports
 import ast
+import json
 import os
+import re
+from datetime import datetime
 
 import openai
 from dotenv import load_dotenv
@@ -10,6 +13,7 @@ from llama_index.core.embeddings import resolve_embed_model
 from llama_index.core.output_parsers import PydanticOutputParser
 from llama_index.core.query_pipeline import QueryPipeline
 from llama_index.core.tools import QueryEngineTool, ToolMetadata
+from llama_index.llms.gemini import Gemini
 from llama_index.llms.ollama import Ollama
 from llama_index.llms.openai import OpenAI
 from llama_parse import LlamaParse
@@ -21,11 +25,11 @@ from prompts import code_parser_template, context
 # Loading in the Llama cloud api key, Llamaparse will use it automatically when loaded in
 load_dotenv()
 
-modelname = "gpt-4o-mini"
+modelname = "models/gemini-1.5-flash"
 
 # Check for OpenAI API Key
-if not os.getenv("OPENAI_API_KEY"):
-    raise ValueError("OPENAI_API_KEY environment variable not set.")
+if not os.getenv("GOOGLE_API_KEY"):
+    raise ValueError("GOOGLE_API_KEY environment variable not set.")
 
 # 1. Load in and parse the PDF into logical portions&chunks
 # 2. Create a vector store index, which is like a database that allows us to find info we're looking for
@@ -35,7 +39,7 @@ if not os.getenv("OPENAI_API_KEY"):
 
 
 # Define the llm object passing in the model name and request_timeout
-llm = OpenAI(model=modelname)
+llm = Gemini(model=modelname)
 # Define a parser and pass in a result type format e.g. markdown
 # Takes documents, pushes them out to the cloud, parses them and returns the parse
 # Provides better results for unstructured data like our pdfs
@@ -75,7 +79,7 @@ tools = [
 ]
 
 # Defining a new llm object which is more suited to code generation as oppposed to Q&A
-code_llm = OpenAI(model=modelname)
+code_llm = Gemini(model=modelname)
 
 # Defining the agent which is a ReActAgent object calling the from_tools function
 # We pass our array of tools, new llm object, Verbose (Boolean) for if you want to see the agents thoughts and a context string.
@@ -115,38 +119,40 @@ output_pipeline = QueryPipeline(chain=[json_prompt_tmpl, llm])
 # q to quit the loop
 
 # prompt: read the contents of the test.py file and write a python script that calls the post endpoint in that file to make a new item
-while (
-    prompt := input(
-        "Enter a prompt, be as specific and verbose as possible for the best results (q to quit): "
-    )
-) != "q":
+while (prompt := input("Enter filename (q to quit): ")) != "q":
+
+    dt = datetime.now()  # for date and time
+    ts = datetime.timestamp(dt)
+
+    adjusted_prompt = f"""
+    Read the contents of the file {prompt} then Generate and add comprehensive Google-style docstrings to all functions, classes, and the module itself. Ensure that each function docstring includes a description of the function's purpose, arguments, return values, and any exceptions raised. For classes, describe the class's purpose and its methods. ensure the returned file contains **exactly** *all of the code content of the originally provided file*, plus the new docstrings.
+    """
     retries = 0
+
     while retries < 3:
         try:
-            result = agent.query(prompt)
+            result = agent.query(adjusted_prompt)
             next_result = output_pipeline.run(response=result)
-
+            print(f"{next_result}")
             cleaned_json = ast.literal_eval(str(next_result).replace("assistant:", ""))
             break
-
         except Exception as e:
             retries += 1
             print(f"Error occured, retry #{retries}:", e)
 
     if retries >= 3:
-        print("unable to process request, try again")
+        print("Unable to process request, try again...")
         continue
 
-    print("Code cleaned:")
+    print("Code generated")
     print(cleaned_json["code"])
-    print("\n\nDescription:", cleaned_json["description"])
+    print("\n\nDesciption:", cleaned_json["description"])
 
     filename = cleaned_json["filename"]
 
     try:
-        with open(os.path.join("review", filename), "w") as f:
+        with open(os.path.join("review", f"{prompt[:-3]}_{ts}_review.py"), "w") as f:
             f.write(cleaned_json["code"])
-            print(f"wrote code to {filename}")
-
-    except Exception as e:
-        print(f"error writing to file: {filename}: ", e)
+        print("Saved file", filename)
+    except:
+        print("Error saving file...")
