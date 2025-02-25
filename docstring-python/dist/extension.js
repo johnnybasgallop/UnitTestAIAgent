@@ -52,56 +52,78 @@ function activate(context) {
     const fileContent = document.getText();
     const fileName = path.basename(document.fileName);
     const pythonScriptPath = path.join(context.extensionPath, "python", "main.py");
-    const python = (0, import_child_process.spawn)("python3", [pythonScriptPath]);
-    let output = "";
-    let errorOutput = "";
-    python.stdout.on("data", (data) => {
-      output += data.toString();
-    });
-    python.stderr.on("data", (data) => {
-      errorOutput += data.toString();
-    });
-    python.on("close", async (code) => {
-      if (code !== 0) {
-        console.error(`Python script exited with code ${code}:
+    const config = vscode.workspace.getConfiguration("docstring-python");
+    const apiKey = config.get("geminiApiKey");
+    if (!apiKey) {
+      vscode.window.showErrorMessage("Please set your Gemini API key in the extension settings.");
+      return;
+    }
+    vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      // Show in notification area
+      title: "Generating Docstrings...",
+      cancellable: false
+      // Set to true if you want to allow users to cancel
+    }, async (progress) => {
+      progress.report({ increment: 0 });
+      const pythonProcess = (0, import_child_process.spawn)("python3", [pythonScriptPath]);
+      let output = "";
+      let errorOutput = "";
+      pythonProcess.stdout.on("data", (data) => {
+        output += data.toString();
+      });
+      pythonProcess.stderr.on("data", (data) => {
+        errorOutput += data.toString();
+      });
+      pythonProcess.on("close", async (code) => {
+        if (code !== 0) {
+          console.error(`Python script exited with code ${code}:
 ${errorOutput}`);
-        vscode.window.showErrorMessage(`Python script failed (code ${code}). See console for details.`);
-        return;
-      }
-      const jsonRegex = /{[\s\S]*}/;
-      const jsonMatch = output.match(jsonRegex);
-      if (!jsonMatch) {
-        console.error("No valid JSON found in Python output:", output);
-        vscode.window.showErrorMessage("Python script did not return valid JSON.");
-        return;
-      }
-      let cleaned_json;
-      try {
-        cleaned_json = JSON.parse(jsonMatch[0]);
-        if (!cleaned_json || typeof cleaned_json.code !== "string") {
-          throw new Error("Invalid JSON structure or missing 'code' property.");
+          vscode.window.showErrorMessage(`Python script failed (code ${code}). See console for details.`);
+          return;
         }
-      } catch (error) {
-        console.error("Error parsing JSON:", error.message, "\nOriginal Output:", output);
-        vscode.window.showErrorMessage("Failed to parse JSON from Python script: " + error.message);
-        return;
-      }
-      try {
-        await editor.edit((editBuilder) => {
-          const fullRange = new vscode.Range(
-            document.positionAt(0),
-            document.positionAt(fileContent.length)
-          );
-          editBuilder.replace(fullRange, cleaned_json.code);
+        const jsonRegex = /{[\s\S]*}/;
+        const jsonMatch = output.match(jsonRegex);
+        if (!jsonMatch) {
+          console.error("No valid JSON found in Python output:", output);
+          vscode.window.showErrorMessage("Python script did not return valid JSON.");
+          return;
+        }
+        let cleaned_json;
+        try {
+          cleaned_json = JSON.parse(jsonMatch[0]);
+          if (!cleaned_json || typeof cleaned_json.code !== "string") {
+            throw new Error("Invalid JSON structure or missing 'code' property.");
+          }
+        } catch (error) {
+          console.error("Error parsing JSON:", error.message, "\nOriginal Output:", output);
+          vscode.window.showErrorMessage("Failed to parse JSON from Python script: " + error.message);
+          return;
+        }
+        try {
+          await editor.edit((editBuilder) => {
+            const fullRange = new vscode.Range(
+              document.positionAt(0),
+              document.positionAt(fileContent.length)
+            );
+            editBuilder.replace(fullRange, cleaned_json.code);
+          });
+          vscode.window.showInformationMessage("Docstrings generated and applied!");
+        } catch (error) {
+          console.error("Error writing to file:", error);
+          vscode.window.showErrorMessage("Failed to update file: " + error);
+        }
+      });
+      pythonProcess.stdin.write(apiKey + "\n");
+      pythonProcess.stdin.write(fileName + "\n");
+      pythonProcess.stdin.end(fileContent);
+      return new Promise((resolve) => {
+        pythonProcess.on("close", () => {
+          progress.report({ increment: 100 });
+          resolve();
         });
-        vscode.window.showInformationMessage("Docstrings generated and applied!");
-      } catch (error) {
-        console.error("Error writing to file:", error);
-        vscode.window.showErrorMessage("Failed to update file:  " + error);
-      }
+      });
     });
-    python.stdin.write(fileName + "\n");
-    python.stdin.end(fileContent);
   });
   context.subscriptions.push(disposable);
 }

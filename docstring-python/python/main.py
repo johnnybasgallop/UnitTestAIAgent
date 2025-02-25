@@ -17,18 +17,19 @@ from pydantic import BaseModel
 from prompts import code_parser_template, context
 
 load_dotenv()
+api_key = sys.stdin.readline().strip()
 
 modelname = "models/gemini-1.5-flash"
 
 if not os.getenv("GOOGLE_API_KEY"):
     raise ValueError("GOOGLE_API_KEY environment variable not set.")
 
-llm = Gemini(model=modelname)
+llm = Gemini(model=modelname, api_key=api_key)
 
 # We are no longer loading documents from the "data" directory.
 tools = []  # No tools needed
 code_llm = Gemini(
-    model=modelname
+    model=modelname, api_key=api_key
 )  # Could use the same LLM, but kept separate for clarity
 agent = ReActAgent.from_tools(tools=tools, llm=code_llm, verbose=True, context=context)
 

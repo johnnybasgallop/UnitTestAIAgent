@@ -1,3 +1,4 @@
+
 {
 	"name": "docstring-python",
 	"displayName": "Docstring Generator",
@@ -19,7 +20,17 @@
 				"command": "docstring-python.generateDocstrings",
 				"title": "Generate Docstrings"
 			}
-		]
+		],
+        "configuration": {
+            "title": "Docstring Generator Settings",
+            "properties": {
+                "docstring-python.geminiApiKey": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your Google Gemini API key."
+                }
+            }
+        }
 	},
 	"scripts": {
 		"vscode:prepublish": "npm run package",
