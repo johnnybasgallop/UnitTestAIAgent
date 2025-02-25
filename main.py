@@ -68,13 +68,6 @@ query_engine = vector_index.as_query_engine(llm=llm)
 # The metadata is a ToolMetaData object which takes in a name and a description of the tools purpose
 # Second tool is the code reader tool, as defined in code_reader.py
 tools = [
-    QueryEngineTool(
-        query_engine=query_engine,
-        metadata=ToolMetadata(
-            name="api_documentation",
-            description="this gives documentation about code for an API. Use this for reading docs for the API",
-        ),
-    ),
     code_reader,
 ]
 
