@@ -134,7 +134,12 @@ while (prompt := input("Enter filename (q to quit): ")) != "q":
             result = agent.query(adjusted_prompt)
             next_result = output_pipeline.run(response=result)
             print(f"{next_result}")
-            cleaned_json = ast.literal_eval(str(next_result).replace("assistant:", ""))
+            cleaned_json = ast.literal_eval(
+                str(next_result)
+                .replace("assistant:", "")
+                .replace("```json", "")
+                .replace("```", "")
+            )
             break
         except Exception as e:
             retries += 1
