@@ -23,7 +23,7 @@ and return a JSON object that conforms EXACTLY to the CodeOutput interface above
 Do NOT include any text outside of the JSON object. Do NOT include any markdown
 formatting, such as code fences (```).
 
-Read the contents of the file {response} then Generate and add comprehensive Google-style docstrings to all functions, classes, and the module itself. Ensure that each function docstring includes a description of the function's purpose, arguments, return values, and any exceptions raised. For classes, describe the class's purpose and its methods. ensure the returned file contains **exactly** *all of the code content of the originally provided file*, plus the new docstrings.
+Read the contents of the file {response} then Generate and add comprehensive Google-style docstrings to all functions, classes, loops and the module itself. Ensure that each function docstring includes a description of the function's purpose, arguments, return values, and any exceptions raised. For classes, describe the class's purpose and its methods. ensure the returned file contains **exactly** *all of the code content of the originally provided file*, plus the new docstrings.
 
 IMPORTANT:  Any backslashes (\) within the 'code' string MUST be escaped
 for JSON. This means that any literal backslash in the Python code (e.g.,
