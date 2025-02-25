@@ -5,7 +5,6 @@ import os
 import sys
 from datetime import datetime
 
-from dotenv import load_dotenv
 from llama_index.core import PromptTemplate
 from llama_index.core.agent import ReActAgent
 from llama_index.core.output_parsers import PydanticOutputParser
@@ -16,13 +15,9 @@ from pydantic import BaseModel
 # Import prompts from the separate prompts.py file
 from prompts import code_parser_template, context
 
-load_dotenv()
 api_key = sys.stdin.readline().strip()
 
 modelname = "models/gemini-1.5-flash"
-
-if not os.getenv("GOOGLE_API_KEY"):
-    raise ValueError("GOOGLE_API_KEY environment variable not set.")
 
 llm = Gemini(model=modelname, api_key=api_key)
 
